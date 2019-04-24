@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import time
 import math
 
-import gym
 from baselines import logger
 from baselines import bench
 from baselines.common import set_global_seeds
@@ -14,7 +13,7 @@ import os.path as osp
 
 
 class DronePPO:
-    def __init__(self, init_mean, init_std, actions, num_timesteps, seed):
+    def __init__(self, init_mean, init_std, num_timesteps, seed):
 
         self.init_mean = init_mean
         self.init_std = init_std
@@ -25,16 +24,6 @@ class DronePPO:
         self.init_pose = None       # Initial pose for each episode
         self.linSpeed = None
         self.ready = False
-
-        # PPO in baseline requires action space and observation space
-        # AirSim does not provide this kind of data
-        # For drone control -> continuous action space = "Box space"
-        # Roll, Pitch, Yaw
-        # Observation -> Camera capture image on drone
-        self.ac_space = gym.spaces.Box(low=np.array([actions[0][0], actions[1][0], actions[2][0]]),
-                                       high=np.array([actions[0][1], actions[1][1], actions[2][2]]),
-                                       dtype=np.float32)
-        self.ob_space = None
 
         self.airsimConnect()
 
@@ -79,7 +68,6 @@ class DronePPO:
             time.sleep(0.03)
 
         self.ready = True
-
 
 
     def train(self):
@@ -135,19 +123,6 @@ def main():
     z_std = 0.3
     yaw_std = math.pi/2
     init_std = [x_std, y_std, z_std, yaw_std]
-
-    # Action space lower and upper bounds
-    # in degree
-    roll_l = -20.0
-    roll_u = 20.0
-    pitch_l = -20.0
-    pitch_u = 20.0
-    yaw_l = -180.0
-    yaw_u = 180.0
-    actions = [[roll_l, roll_u],
-               [pitch_l, pitch_u],
-               [yaw_l, yaw_u]]
-
 
     num_timesteps = 0
     seed = 0
