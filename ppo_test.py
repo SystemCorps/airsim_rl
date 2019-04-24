@@ -84,7 +84,7 @@ class DronePPO:
         set_global_seeds(workerseed)
         def policy_fn(name, ob_space, ac_space):
             return cnn_policy.CnnPolicy(name=name, ob_space=ob_space, ac_space=ac_space)
-        
+
 
 
 
