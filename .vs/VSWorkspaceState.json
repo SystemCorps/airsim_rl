@@ -1,7 +1,9 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\airsim_env",
+    "\\airsim_env\\envs"
   ],
-  "SelectedNode": "\\ppo_test.py",
+  "SelectedNode": "\\airsim_env\\envs\\airsim_client.py",
   "PreviewInSolutionExplorer": false
 }

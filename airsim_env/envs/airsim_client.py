@@ -67,7 +67,9 @@ class AirSimClient:
     def getDroneCam(self, img_size):
         return_img = None
         # get png format
-        resp = self.client.simGetImages([airsim.ImageRequest(0, airsim.ImageType.Scene)])
+        resps = self.client.simGetImages([airsim.ImageRequest(0, airsim.ImageType.Scene)])
+        resp = resps[0]
+        img1d = np.frombuffer(resp.image_data_unit8, dtype=np.uint8)
 
         
         return return_img
