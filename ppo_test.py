@@ -9,6 +9,7 @@ import gym
 from baselines import logger
 from baselines import bench
 from baselines.common import set_global_seeds
+import pposgd_simple_airsim, cnn_policy_airsim
 from mpi4py import MPI
 import os.path as osp
 
@@ -83,7 +84,6 @@ class DronePPO:
 
 
     def train(self):
-        from baselines.ppo1 import pposgd_simple, cnn_policy
         import baselines.common.tf_util as U
         rank = MPI.COMM_WORLD.Get_rank()
         sess = U.single_threaded_session()
@@ -95,13 +95,9 @@ class DronePPO:
         workerseed = self.seed + 10000 * MPI.COMM_WORLD.Get_rank() if self.seed is not None else None
         set_global_seeds(workerseed)
         def policy_fn(name, ob_space, ac_space):
-            return cnn_policy.CnnPolicy(name=name, ob_space=ob_space, ac_space=ac_space)
+            return cnn_policy_airsim.CnnPolicy(name=name, ob_space=ob_space, ac_space=ac_space)
 
-
-
-
-        env = bench.Monitor(env, logger.get_dir() and
-                            osp.join(logger.get_dir(), str(rank)))
+        # pposgd_simple input requirements
 
 
 
