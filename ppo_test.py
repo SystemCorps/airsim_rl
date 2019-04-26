@@ -1,123 +1,54 @@
-import airsim
-import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
-import time
-import math
 
-import gym
-from baselines import logger
-from baselines import bench
-from baselines.common import set_global_seeds
-import pposgd_simple_airsim, cnn_policy_airsim
+#!/usr/bin/env python3
+
 from mpi4py import MPI
+from baselines.common import set_global_seeds
+from baselines import bench
 import os.path as osp
+from baselines import logger
+from baselines.common.atari_wrappers import make_atari, wrap_deepmind
+import airsim_env
+import math
+import gym
 
 
-class DronePPO:
-    def __init__(self, init_mean, init_std, actions, num_timesteps, seed):
+def train(env_id, num_timesteps, seed):
+    from baselines.ppo1 import pposgd_simple, cnn_policy
+    import baselines.common.tf_util as U
+    rank = MPI.COMM_WORLD.Get_rank()
+    sess = U.single_threaded_session()
+    sess.__enter__()
+    if rank == 0:
+        logger.configure()
+    else:
+        logger.configure(format_strs=[])
+    workerseed = seed + 10000 * MPI.COMM_WORLD.Get_rank() if seed is not None else None
+    set_global_seeds(workerseed)
+    env = gym.make(env_id)
+    def policy_fn(name, ob_space, ac_space): #pylint: disable=W0613
+        return cnn_policy.CnnPolicy(name=name, ob_space=ob_space, ac_space=ac_space)
+    env = bench.Monitor(env, logger.get_dir() and
+        osp.join(logger.get_dir(), str(rank)))
+    env.seed(workerseed)
 
-        self.init_mean = init_mean
-        self.init_std = init_std
-        self.num_timesteps = num_timesteps
-        self.seed = seed
+    env = wrap_deepmind(env)
+    env.seed(workerseed)
 
-        self.client = None
-        self.init_pose = None       # Initial pose for each episode
-        self.linSpeed = None
-        self.ready = False
-
-        # PPO in baseline requires action space and observation space
-        # AirSim does not provide this kind of data
-        # For drone control -> continuous action space = "Box space"
-        # Roll, Pitch, Yaw
-        # Observation -> Camera capture image on drone
-        self.ac_space = gym.spaces.Box(low=np.array([actions[0][0], actions[1][0], actions[2][0]]),
-                                       high=np.array([actions[0][1], actions[1][1], actions[2][2]]),
-                                       dtype=np.float32)
-        self.ob_space = None
-
-        self.airsimConnect()
-
-
-    def airsimConnect(self):
-        self.client = airsim.MultirotorClient()
-        self.client.confirmConnection()
-        self.client.enableApiControl(True)
-        self.client.armDisarm(True)
-
-        # Takeoff
-        self.client.takeoffAsync().join()
-
-
-    def initPoseRnd(self):
-        self.init_pose = np.random.normal(self.init_mean, self.init_std)
-
-
-    def calLinSpeed(self):
-        state = self.client.getMultirotorState()
-
-        vx = state.kinematics_estimated.linear_velocity.x_val
-        vy = state.kinematics_estimated.linear_velocity.y_val
-        vz = state.kinematics_estimated.linear_velocity.z_val
-        linSpeed = (vx**2 + vy**2 + vz**2)**0.5
-
-        return linSpeed
-
-
-    def mvToInitPose(self):
-        self.initPoseRnd()
-        # To the initial position and yaw (heading)
-        self.client.moveToPositionAsync(self.init_pose[0],
-                                        self.init_pose[1],
-                                        self.init_pose[2])
-        self.client.rotateToYawAsync(self.init_pose[3])
-
-        linSpeed = self.calLinSpeed()
-
-        while(linSpeed < 0.1):
-            linSpeed = self.calLinSpeed()
-            time.sleep(0.03)
-
-        self.ready = True
-
-
-
-    def train(self):
-        import baselines.common.tf_util as U
-        rank = MPI.COMM_WORLD.Get_rank()
-        sess = U.single_threaded_session()
-        sess.__enter__()
-        if rank == 0:
-            logger.configure()
-        else:
-            logger.configure(format_strs=[])
-        workerseed = self.seed + 10000 * MPI.COMM_WORLD.Get_rank() if self.seed is not None else None
-        set_global_seeds(workerseed)
-        def policy_fn(name, ob_space, ac_space):
-            return cnn_policy_airsim.CnnPolicy(name=name, ob_space=ob_space, ac_space=ac_space)
-
-        # pposgd_simple input requirements
-
-
-
-
-
-
-
+    pposgd_simple.learn(env, policy_fn,
+        max_timesteps=int(num_timesteps * 1.1),
+        timesteps_per_actorbatch=256,
+        clip_param=0.2, entcoeff=0.01,
+        optim_epochs=4, optim_stepsize=1e-3, optim_batchsize=64,
+        gamma=0.99, lam=0.95,
+        schedule='linear'
+    )
 
 
 
 
 def main():
-    # Connecting AirSim-UE
-    client = airsim.MultirotorClient()
-    client.confirmConnection()
-    client.enableApiControl(True)
-    client.armDisarm(True)
 
-    client.takeoffAsync().join()
-
+    env_name = 'AirSimPPO-v0'
     # initial pose after takeoff - mean values and std for randomization using Gaussian Distribution
     # 4-DOF (x, y, z, yaw)
     x_mean = 0
@@ -134,22 +65,23 @@ def main():
 
     # Action space lower and upper bounds
     # in degree
-    roll_l = -20.0
-    roll_u = 20.0
     pitch_l = -20.0
     pitch_u = 20.0
+    roll_l = -1.0
+    roll_u = 1.0
     yaw_l = -180.0
     yaw_u = 180.0
-    actions = [[roll_l, roll_u],
-               [pitch_l, pitch_u],
-               [yaw_l, yaw_u]]
+    duration = 0.1      # 10 Hz update rate
+    actions = [[pitch_l, pitch_u],
+               [roll_l, roll_u],
+               [yaw_l, yaw_u],
+               [duration, duration]]
 
 
-    num_timesteps = 0
+    num_timesteps = 1000
     seed = 0
 
-
-
+    train(env_name, num_timesteps, seed)
 
 
 
