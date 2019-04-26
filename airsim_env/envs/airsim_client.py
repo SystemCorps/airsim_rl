@@ -54,7 +54,7 @@ class AirSimClient():
             linSpeed = self.calLinSpeed()
             time.sleep(0.03)
         """
-        self.client.rotateToYawAsync(self.init_pose[3]).jont()
+        self.client.rotateToYawAsync(self.init_pose[3]).join()
         """
         while (self.client.getMultirotorState().kinematics_estimated.angular_velocity.z_val < 0.1):
             time.sleep(0.01)
@@ -66,7 +66,7 @@ class AirSimClient():
     def exec_action(self, action):
         # client.moveByAngleThrottleAsync(pitch, roll, throttle, yaw_rate, duration);
         self.client.moveByAngleThrottleAsync(action[0], action[1], action[2], action[3], action[4]).join()
-        time.sleep(action[4])
+        #time.sleep(action[4])
         collision = self.client.getMultirotorState().collision.has_collided
 
         return collision
