@@ -46,7 +46,7 @@ class AirSimClient():
         # To the initial position and yaw (heading)
         self.client.moveToPositionAsync(self.init_pose[0],
                                         self.init_pose[1],
-                                        self.init_pose[2], 1.0).join()
+                                        self.init_pose[2], 2.0).join()
 
         linSpeed = self.calLinSpeed()
         """
@@ -59,37 +59,39 @@ class AirSimClient():
         while (self.client.getMultirotorState().kinematics_estimated.angular_velocity.z_val < 0.1):
             time.sleep(0.01)
         """
+        print("Initial Pose!")
 
 
 
         
     def exec_action(self, action):
+        # to_msgpack  cannot use np.float32 type
+        ac = [0.0]*5
+        for i in range(len(action)):
+            ac[i] = float(action[i])
         # client.moveByAngleThrottleAsync(pitch, roll, throttle, yaw_rate, duration);
-        self.client.moveByAngleThrottleAsync(action[0], action[1], action[2], action[3], action[4]).join()
+        self.client.moveByAngleThrottleAsync(ac[0], ac[1], ac[2], ac[3], ac[4]).join()
         #time.sleep(action[4])
-        collision = self.client.getMultirotorState().collision.has_collided
 
-        return collision
+        #collision = self.client.getMultirotorState().collision.has_collided
+        #print(collision)
+
+        #return collision
 
 
 
 
-    def getDroneCam(self, img_size=(84,84,1)):
+    def getDroneCam(self, img_size=(84,84,3)):
         return_img = None
 
         # get png format and convert RGBA to GRAY
-        raw_img = self.client.simGetImages("0", airsim.ImageType.Scene)
+        raw_img = self.client.simGetImage("0", airsim.ImageType.Scene)
         png = cv2.imdecode(airsim.string_to_uint8_array(raw_img), cv2.IMREAD_UNCHANGED)
-        gray_img = cv2.cvtColor(png, cv2.COLOR_BGRA2GRAY)
-
-        # get png format
-        resps = self.client.simGetImages([airsim.ImageRequest(0, airsim.ImageType.Scene)])
-        resp = resps[0]
-        img1d = np.frombuffer(resp.image_data_unit8, dtype=np.uint8)
-
+        rgb_img = cv2.cvtColor(png, cv2.COLOR_BGRA2RGB)
+        #rgb_img = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2RGB)
 
         # resize
-        img = cv2.resize(gray_img, (img_size[0], img_size[1]))
+        img = cv2.resize(rgb_img, (img_size[0], img_size[1]))
         return_img = img.reshape(img_size)
         
         return return_img
@@ -102,5 +104,7 @@ class AirSimClient():
         self.client.armDisarm(True)
         # Takeoff
         self.client.takeoffAsync().join()
+        self.mvToInitPose()
+        print("Simulation Reset Done!")
 
         

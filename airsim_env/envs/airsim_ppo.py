@@ -7,6 +7,7 @@ from gym.spaces.box import Box
 import numpy as np
 import logging
 import math
+from threading import Thread
 
 from airsim_env.envs.airsim_client import *
 
@@ -47,6 +48,7 @@ class AirSimPPO():
                                        dtype=np.float32)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(84, 84, 1), dtype=np.uint8)
         self.state = np.zeros((84, 84, 1), dtype=np.uint8)
+        self.reward_range = (-float('inf'), float('inf'))
         self._seed()
 
         x_mean = -8
@@ -70,6 +72,12 @@ class AirSimPPO():
         self.steps = 0
         self.no_episode = 0
         self.reward_sum = 0
+        self.spec = None
+
+        self.ctime_pre = 0
+        self.ctime = None
+        self.cobj = None
+
 
 
     def _seed(self, seed=None):
@@ -89,7 +97,7 @@ class AirSimPPO():
 
 
     def goal_dir(self, goal, pos):
-        pitch, roll, yaw = self.toEulerianAngle(self.sim.client.simGetGroundTruthKinematics().orientation)
+        pitch, roll, yaw = self.toEulerianAngle(self, self.sim.client.simGetGroundTruthKinematics().orientation)
         yaw = math.degrees(yaw)
         pos_angle = math.atan2(goal[1] - pos.y_val, goal[0] - pos.x_val)
         pos_angle = math.degrees(pos_angle) % 360
@@ -101,10 +109,25 @@ class AirSimPPO():
     # Input: Action, Output: Observation, Reward, New episode
     def _step(self, action):
         self.steps += 1
-        collided = self.sim.exec_action(action)
+
+
+        self.cobj = self.sim.client.simGetCollisionInfo().object_id
+        self.ctime = self.sim.client.simGetCollisionInfo().time_stamp
+        if self.steps == 1:
+            self.ctime_pre = self.ctime
+
+        if self.cobj != -1:
+            if self.ctime - self.ctime_pre > 0:
+                self.collided = True
+                self.ctime_pre - self.ctime
+
+
+
+        self.sim.exec_action(action)
         position = self.sim.client.simGetGroundTruthKinematics().position
 
-        if collided == True:
+
+        if self.collided == True:
             done = True
             reward = -100.0
             dist = np.sqrt(np.power(self.goal[0] - position.x_val, 2) +
@@ -114,6 +137,7 @@ class AirSimPPO():
         else:
             done = False
             reward, dist = self.reward_cal(position)
+
 
         if dist < 1:
             done = True
@@ -128,6 +152,10 @@ class AirSimPPO():
         info = {"x_pos":position.x_val, "y_pos":position.y_val, "z_pos":position.z_val}
         self.state = self.sim.getDroneCam()
 
+        print("Reward Sum: ", self.reward_sum)
+        print("Distance-to-goal: ", dist)
+        print("Collision: ", self.collided)
+
         return self.state, reward, done, info
 
 
@@ -136,6 +164,7 @@ class AirSimPPO():
         self.steps = 0
         self.reward_sum = 0
         self.no_episode += 1
+        self.collided = False
 
         position = self.sim.client.simGetGroundTruthKinematics().position
         goal = self.goal_dir(self.goal, position)
@@ -146,6 +175,29 @@ class AirSimPPO():
 
     def _render(self, mode='human', close=False):
         return
+
+
+    @property
+    def unwrapped(self):
+        return self
+
+    def __str__(self):
+        if self.spec is None:
+            return '<{} instawnce>'.format(type(self).__name__)
+        else:
+            return '<{}<{}>>'.format(type(self).__name__, self.spec.id)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+        return False
+
+    def get_action_meanings(self):
+        return 'None'
+
+
 
 
 
@@ -176,3 +228,4 @@ class AirSimPPO():
         yaw = math.atan2(t3, t4)
 
         return (pitch, roll, yaw)
+
